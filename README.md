@@ -2,9 +2,26 @@
 
 This is (going to be) a RAG pipeline designed specifically for searching for and ingesting scientific publications en masse. Currently, this is limited to ArXiv, but who knows where else it'll scrape! It will also condense the article summary, and query whether a given paper is suitable literature for a research project.
 
+I have avoided using LLMs to write the code in this repository.
+
 ## Progress
 - [x] Paper querying
 - [x] Sorting, summary, and download
-- [ ] Text extraction
+- [x] Text extraction
 - [ ] RAG implementation
 - [ ] The future???
+
+## Requirements
+At the moment, it is probably easiest to use `uv init --bare && uv sync` to get this project going, after cloining or downloading the repo. You will also recquire an LLM for this, naturally. I use a local model, running with `llama.cpp` at `127.0.0.1:8080`.
+Other than what is stated in `pyproject.toml` and the LLM, this project also requires GROBID (), a local instant of which can be acquired and run wuth docker:
+```
+docker run --rm --init --ulimit core=1 -p 8070:8070 grobid/grobid:0.9.0-crf
+```
+
+## Philosophy
+The principle idea behind this project is to ascertain the state of the at for a very specific, very niche research topic. Below is a short workflow concept, but the actual order of operations will eventually be able to be user-defined for various applications.
+
+1. Enter queries for ArXiv papers
+2. Use an LLM to ascertain whether the paper might be worth downloading, using the summary as retrieved from step 1.
+3. Download and extract the text from the papers.
+4. Apply RAG methodologies to query from these papers as to the state of the art, and other bleeding-edge research topics and questions.
