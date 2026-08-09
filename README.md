@@ -4,6 +4,10 @@ This is (going to be) a RAG pipeline designed specifically for searching for and
 
 I have avoided using LLMs to write the code in this repository.
 
+### Yet another RAG pipeline???
+
+Well, this is designed with a specific project in mind (watch this space!) using a local LLM, which adds a further challenge of resource constraints. And also YARG isn't a particularly nice-sounding project name.
+
 ## Progress
 - [x] Paper querying
 - [x] Sorting, summary, and download
