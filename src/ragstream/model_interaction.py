@@ -41,9 +41,16 @@ class BooleanReasoning(LLMClientBase):
             First, think through the problem. Then, you MUST output your final answer wrapped in <answer> tags.
             The only acceptable values inside the tags are 'yes' or 'no'. Example: <answer>yes</answer>.
         """
-        self.system_prompt = SystemMessage(content=system_prompt + additional_instructions)
+        self.system_prompt = SystemMessage(content=system_prompt + "\n" + additional_instructions + "\n")
 
     def invoke(self, message: str) -> Tuple[str, str | None]:
+        """
+        Args:
+            message (str): Prompt to be sent to the model
+
+        Returns:
+            Tuple of str: The raw text[0] and the answer (yes or no)[1]
+        """
         response = self.llm.invoke([self.system_prompt, HumanMessage(content = message)])
         raw_text = response.content
         match = re.search(r'<answer>\s*(yes|no)\s*</answer>', raw_text, re.IGNORECASE)

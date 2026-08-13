@@ -1,8 +1,16 @@
-import itertools
 from contextlib import contextmanager
 from pathlib import Path
 from collections.abc import Iterable
-import os, sys
+from typing import Dict
+import os
+import urllib.request
+import urllib.error
+import logging
+import json
+from time import sleep
+
+logging.basicConfig()
+logging.getLogger().setLevel(logging.INFO)
 
 def imerge(a: Iterable, b: Iterable) -> Iterable:
     """
@@ -50,3 +58,48 @@ def normalise_string_responses(responses: list[str]) -> list[str]:
 
     """
     return [response.strip().lower().replace(".", "") for response in responses]
+
+def check_services(
+        ports: Dict[str, int] = {
+            "LLM": 8080,
+            "GROBID": 8070
+        },
+        timeout: int = 5) -> bool:
+    """
+    Check to see whether a local LLM and the GROBID server are running. It assumes that llama.cpp is being used to host the models.
+
+    Args:
+        ports (Dict): dictionary of which ports belong to which tool. Default is
+            `{"LLM": 8080, "GROBID":8070}`
+        timeout (int): number of second before HTTP request timesout. Defaults to 5.
+
+    Returns:
+        bool: True is both the LLM and GROBID respond, false otherwise.
+    """
+    grobid_addr = f"http://localhost:{ports['GROBID']}/api/isalive"
+    llm_addr = f"http://localhost:{ports['LLM']}/health"
+
+    grobid_isalive = False
+    llm_isalive = False
+
+    try:
+        response = urllib.request.urlopen(grobid_addr, timeout=timeout)
+        grobid_isalive = response.getcode() == 200
+        if not grobid_isalive:
+            logging.warning(f"GROBID server responded with {response.getcode()}.")
+    except (urllib.error.URLError, ConnectionResetError, TimeoutError):
+        logging.warning("GROBID server cannot be reached")
+    try:
+        response = urllib.request.urlopen(llm_addr, timeout=timeout)
+        if response.getcode() == 200:
+            data = json.loads(response.read().decode('utf-8'))
+            llm_isalive = data.get("status") == "ok"
+    except (urllib.error.URLError, ConnectionResetError, TimeoutError):
+        logging.warning("LLM (llama.cpp) cannot be reached.")
+    except urllib.error.HTTPError as e:
+        # HTTP 503 confirms the process is alive, but the model is still loading.
+        if e.code == 503:
+            logging.info("LLM is live, but model is likely loading (HTTP 503)")
+            sleep(timeout)
+            return(check_services(ports=ports))
+    return llm_isalive and grobid_isalive

@@ -6,15 +6,37 @@ from collections.abc import Iterable
 import pandas as pd
 import pymupdf
 import logging
-from typing import List
+from typing import List, Dict, Any, Tuple
+import numpy as np
+import json
 
-from ragstream.model_interaction import BooleanReasoning, Summarisation
+from ragstream.model_interaction import BooleanReasoning
 from ragstream.grobid import GrobidExtractionError, extract_body_text as get_grobid_text
 from ragstream.utils import imerge, cd
 
 # logger = logging.getLogger(__name__)
 logging.basicConfig()
 logging.getLogger().setLevel(logging.INFO)
+
+def get_query_terms(json_filepath: str | Path = "research.json") -> Dict[str, Any]:
+    """
+    Retrieve the queries to search ArXiv from the research configuration.
+
+    Args:
+        json_filepath (str or Path): Path to the reasearch json configuration
+
+    Raises:
+        FileNotFoundError: Raised if the file specified does not exist.
+
+    Returns: Dict[str, Any]
+    """
+    path = Path(json_filepath)
+    if path.exists():
+        with open(Path(json_filepath)) as f:
+            research_json = json.loads(f.read())
+        return research_json
+    else:
+        raise FileNotFoundError(f"Cannot find file at: {path}")
 
 def download_pdf(pdf_url: str, name = "paper", save_dir: Path | str = Path(os.getcwd()) / "data") -> None:
     """
@@ -77,8 +99,6 @@ def get_from_arxiv(queries: List[str] | str, max_results = 6, date_from: None = 
             sort_by = arxiv.SortCriterion.SubmittedDate
         )
         results = client.results(search)
-        # if len(results) == 0:
-        #     logging.warning(f"Query \"{query}\" returned 0 results.")
         for result in results:
             entry = result.__dict__
 
@@ -123,6 +143,45 @@ def extract_article_text(pdf_path: str | Path) -> str:
             logging.error(f"Error occurred while reading PDF at {pdf_path}: {e}")
     return text
 
+def get_latest_research(topic: str, queries: str | List[str], n_recent: int = 5) -> List[Tuple[str, str]]:
+    """
+    Queries ArXiv and uses LLM reasoning functionality, finding relevent papers from recent research.
+
+    Args:
+        topic (str): The research topic against which relevence is determined
+        queries (List of str): queries for getting papers from ArXiv
+        n_recent (int): Number of recent papers to retrieve for each query. Defaults to 5.
+
+    Returns:
+        List of Tuple[str, str]: The ArXiv DOI and extracted text from each PDF found to be relevent to the research topic.
+    """
+    papers_df = get_from_arxiv(
+        queries = queries,
+        max_results = n_recent
+    )
+    latest = []
+    summaries = papers_df["summary"].tolist()
+    urls = papers_df["pdf_url"].tolist()
+    dois = papers_df["doi"].tolist()
+    decisions = np.zeros(len(summaries), dtype=np.int8)
+    for i, summary in enumerate(summaries):
+        # New instance each loop to avoid adding to context and creating model confusion etc.
+        decision_maker = BooleanReasoning(additional_instructions = f"Would this paper likely aid in research on the topic: {topic}")
+        _, decision = decision_maker.invoke(summary)
+        logging.info(f"Decision on {dois[i]}: {decision}")
+        if decision == "yes":
+            decisions[i] = 1
+            name = dois[i].replace(":", "_")
+            download_pdf(urls[i], name = name)
+            doi_text = (dois[i], extract_article_text(Path(os.getcwd()) / "data" / f"{name}.pdf"))
+            latest.append(doi_text)
+    decisions = np.bool(decisions)
+    if np.all(~decisions):
+        logging.warning("No relevant papers found. Refine your queries or topic.")
+        return [(None, None)]
+    else:
+        logging.info(f"Fetched {len(latest)} relevant papers.")
+        return latest
 
 if __name__ == "__main__":
     import json
@@ -140,7 +199,7 @@ if __name__ == "__main__":
     summaries = df["summary"].tolist()
     urls, dois = df["pdf_url"].tolist(), df["doi"].tolist()
     for i, summary in enumerate(summaries[2:5]):  # Changed to iterate over a slice of the summaries
-        summariser = Summarisation(additional_instructions = "Please provide a concise summary in 1-2 sentences.")
+        # summariser = Summarisation(additional_instructions = "Please provide a concise summary in 1-2 sentences.")
         decision_maker = BooleanReasoning(additional_instructions = f"Would this paper likely aid in some {topic}")
         # summary_output = summariser.invoke(summary)
         _, decision = decision_maker.invoke(summary)    
@@ -151,4 +210,4 @@ if __name__ == "__main__":
             download_pdf(urls[i], name = name)
             print(f"Downloaded PDF for paper {i+1} to data/{name}.pdf")
             text = extract_article_text(Path(os.getcwd()) / "data" / f"{name}.pdf")
-            print(f"Extracted text from PDF for paper {i+1}:\n{text[:500]}...")  # Print first 500 characters of the extracted text
+            print(f"Extracted text from PDF for paper {i+1}:\n{text[:500]}...") # Print first 500 characters of the extracted text
