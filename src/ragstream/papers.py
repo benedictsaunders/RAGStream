@@ -10,6 +10,8 @@ from typing import List, Dict, Any, Tuple
 import numpy as np
 import json
 
+from langchain_core.documents import Document
+
 from ragstream.model_interaction import BooleanReasoning
 from ragstream.grobid import GrobidExtractionError, extract_body_text as get_grobid_text
 from ragstream.utils import imerge, cd
@@ -115,7 +117,7 @@ def get_from_arxiv(queries: List[str] | str, max_results = 6, date_from: None = 
     papers['doi'] = papers['pdf_url'].apply(get_arxiv_doi)
     return papers
 
-def extract_article_text(pdf_path: str | Path) -> str:
+def extract_article_text(pdf_path: str | Path) -> List[Document] | str:
     """
     Extract text from a given PDF. Primarily, this method uses GROBID, but if that fails, the 
     method falls back to a slightly more improcise approach using PyMuPDF which does a poorer
@@ -143,7 +145,12 @@ def extract_article_text(pdf_path: str | Path) -> str:
             logging.error(f"Error occurred while reading PDF at {pdf_path}: {e}")
     return text
 
-def get_latest_research(topic: str, queries: str | List[str], n_recent: int = 5) -> List[Tuple[str, str]]:
+def get_latest_research(
+        topic: str,
+        queries: str | List[str],
+        n_recent: int = 5,
+        as_langchain_document: bool = True
+        ) -> List[Tuple[str, str]]:
     """
     Queries ArXiv and uses LLM reasoning functionality, finding relevent papers from recent research.
 
@@ -151,6 +158,7 @@ def get_latest_research(topic: str, queries: str | List[str], n_recent: int = 5)
         topic (str): The research topic against which relevence is determined
         queries (List of str): queries for getting papers from ArXiv
         n_recent (int): Number of recent papers to retrieve for each query. Defaults to 5.
+        as_langchain_document (bool): Whether or not a list of langchain docs or just as list of article text
 
     Returns:
         List of Tuple[str, str]: The ArXiv DOI and extracted text from each PDF found to be relevent to the research topic.
@@ -169,16 +177,29 @@ def get_latest_research(topic: str, queries: str | List[str], n_recent: int = 5)
         decision_maker = BooleanReasoning(additional_instructions = f"Would this paper likely aid in research on the topic: {topic}")
         _, decision = decision_maker.invoke(summary)
         logging.info(f"Decision on {dois[i]}: {decision}")
+        doi = dois[i]
         if decision == "yes":
             decisions[i] = 1
-            name = dois[i].replace(":", "_")
+            name = doi.replace(":", "_")
             download_pdf(urls[i], name = name)
-            doi_text = (dois[i], extract_article_text(Path(os.getcwd()) / "data" / f"{name}.pdf"))
-            latest.append(doi_text)
+            pages = extract_article_text(Path(os.getcwd()) / "data" / f"{name}.pdf")
+            if as_langchain_document:
+                for j, page in enumerate(pages):
+                    document = Document(
+                        page_content=page,
+                        metadata={
+                            "page" : j
+                            "source": urls[i],
+                            "DOI": doi
+                        }
+                    )
+                    latest.append(document)
+            else:
+                latest.append(pages)
     decisions = np.bool(decisions)
     if np.all(~decisions):
         logging.warning("No relevant papers found. Refine your queries or topic.")
-        return [(None, None)]
+        return []
     else:
         logging.info(f"Fetched {len(latest)} relevant papers.")
         return latest

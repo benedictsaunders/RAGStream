@@ -17,7 +17,7 @@ Well, this is designed with a specific project in mind (watch this space!) using
 
 ## Requirements
 At the moment, it is probably easiest to use `uv init --bare && uv sync` to get this project going, after cloining or downloading the repo. You will also recquire an LLM for this, naturally. I use a local model, running with `llama.cpp` at `127.0.0.1:8080`.
-Other than what is stated in `pyproject.toml` and the LLM, this project also requires GROBID (), a local instant of which can be acquired and run wuth docker:
+Other than what is stated in `pyproject.toml` and the LLM, this project also requires GROBID (), a local instant of which can be acquired and run using a docker image (taken from ):
 ```
 docker run --rm --init --ulimit core=1 -p 8070:8070 grobid/grobid:0.9.0-crf
 ```

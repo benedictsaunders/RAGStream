@@ -1,3 +1,17 @@
+"""
+Example `research.json`:
+```
+{
+  "topic": "structure discovery pipeline for novel battery materials",
+  "queries": [
+    "'Sodium ion battery' AND 'condensed matter'",
+    "NASICON AND electrode",
+    "'Sodium battery' AND 'novel materials'"
+  ]
+}
+```
+"""
+
 from ragstream.papers import get_query_terms, get_latest_research
 
 # 1. Optionally extract research topic and search queries from a JSON file
@@ -10,5 +24,7 @@ relevant_papers = get_latest_research(
 )
 
 # 3. RAGify the relevant research
+
+
 
 # 4. Query the specific knowledgebase
