@@ -188,7 +188,7 @@ def get_latest_research(
                     document = Document(
                         page_content=page,
                         metadata={
-                            "page" : j
+                            "page" : j,
                             "source": urls[i],
                             "DOI": doi
                         }

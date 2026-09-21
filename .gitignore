@@ -6,8 +6,9 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
+# Environments
 .venv
+.env
 
 # Directories
 prototyping
@@ -16,8 +17,9 @@ prototyping
 uv.lock
 
 # Logs and other files
+*.db
 *.log
-.env
 *.json
 arXiv*.pdf
 extern.py
+test_env.bash

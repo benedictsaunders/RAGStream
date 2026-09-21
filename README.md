@@ -21,6 +21,26 @@ Other than what is stated in `pyproject.toml` and the LLM, this project also req
 ```
 docker run --rm --init --ulimit core=1 -p 8070:8070 grobid/grobid:0.9.0-crf
 ```
+Currently, I use the following bash script to launch both `GROBID` and `llama-server` simultaneously, printing the docker container ID and the `PID` of the llama instance:
+```bash
+#!/bin/bash
+
+# Start GROBID
+
+sudo docker run --rm --init --ulimit core=1 -p 8070:8070 grobid/grobid:0.9.0-crf > grobid.log 2>&1 &
+
+# Start LLM
+
+[llama server command] > llama.log 2>&1 &
+sleep 1
+
+# Get PID and GROBID container ID
+
+GID=$(sudo docker ps | grep grobid | awk '{print $1}')
+echo "LLM PID: $!"
+echo "GROBID CONTAINER ID: $GID"
+```
+Make sure that GROBID and Llama use different ports!
 
 ## Philosophy
 The principle idea behind this project is to ascertain the state of the at for a very specific, very niche research topic. Below is a short workflow concept, but the actual order of operations will eventually be able to be user-defined for various applications.
