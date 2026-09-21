@@ -150,7 +150,7 @@ def get_latest_research(
         queries: str | List[str],
         n_recent: int = 5,
         as_langchain_document: bool = True
-        ) -> List[Tuple[str, str]]:
+        ) -> List[Tuple[str, str]] | List[Document]:
     """
     Queries ArXiv and uses LLM reasoning functionality, finding relevent papers from recent research.
 
@@ -161,7 +161,7 @@ def get_latest_research(
         as_langchain_document (bool): Whether or not a list of langchain docs or just as list of article text
 
     Returns:
-        List of Tuple[str, str]: The ArXiv DOI and extracted text from each PDF found to be relevent to the research topic.
+        List of Tuple[str, str] or List[Document]: The ArXiv DOI and extracted text from each PDF found to be relevent to the research topic.
     """
     papers_df = get_from_arxiv(
         queries = queries,
