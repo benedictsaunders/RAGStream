@@ -1,7 +1,7 @@
 import re
 import tqdm
 import logging
-from typing import Tuple
+from typing import Tuple, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -37,7 +37,7 @@ class BooleanReasoning(LLMClientBase):
         ) -> None:
         super().__init__(temperature = temperature)
         system_prompt = """
-            You are a strict boolean assistant. You must answer with exactly the word 'Yes' or the word 'No'. 
+            Answer with exactly the word 'Yes' or the word 'No'. 
             First, think through the problem. Then, you MUST output your final answer wrapped in <answer> tags.
             The only acceptable values inside the tags are 'yes' or 'no'. Example: <answer>yes</answer>.
         """
@@ -69,7 +69,7 @@ class Summarisation(LLMClientBase):
     def __init__(self, temperature: float = 0.7, additional_instructions: str = "") -> None:
         super().__init__(temperature=temperature)
         system_prompt = """
-        You are a summarisation assistant. You must provide a concise summary of the provided text.
+        Provide a concise summary of the given text.
         """
         self.system_prompt = SystemMessage(content = system_prompt + additional_instructions)
 
@@ -86,8 +86,67 @@ class Summarisation(LLMClientBase):
         response = self.llm.invoke([self.system_prompt, HumanMessage(content = message)])
         return response.content
 
+class GroundedAnswer(LLMClientBase):
+    """
+    Answers a question using only a set of numbered sources, citing them by number, i.e. [1], [2].
+    """
+    def __init__(self, temperature: float = 0.0, additional_instructions: str = "") -> None:
+        super().__init__(temperature = temperature)
+        system_prompt = """
+            Answer the question using ONLY the numbered sources provided. Do not use any outside knowledge.
+            After every claim, cite the source(s) that support it using the source number in square brackets. Example: [2].
+            Never cite a number that does not appear in the sources.
+            If the sources do not contain the answer, say that the sources do not contain the answer, and cite nothing.
+        """
+        self.system_prompt = SystemMessage(content = system_prompt + "\n" + additional_instructions + "\n")
+
+    def invoke(self, question: str, context: str) -> str:
+        """
+        Args:
+            question (str): The question to be answered.
+            context (str): The numbered sources, each starting with its number in square brackets.
+
+        Returns:
+            str: The answer, with citations as source numbers in square brackets.
+        """
+        message = f"Sources:\n\n{context}\n\nQuestion: {question}"
+        response = self.llm.invoke([self.system_prompt, HumanMessage(content = message)])
+        return response.content
+
+class QueryDecomposition(LLMClientBase):
+    """
+    Splits a question covering several topics into standalone questions that can each be searched for separately.
+    """
+    def __init__(self, temperature: float = 0.0, max_questions: int = 3) -> None:
+        super().__init__(temperature = temperature)
+        self.max_questions = max_questions
+        system_prompt = f"""
+            Split the question into the smallest number of standalone search questions needed to answer it.
+            If the question is about a single topic, return it unchanged. Never return more than {max_questions} questions.
+            Each question must make sense on its own, without the others.
+            Output one question per line and nothing else.
+        """
+        self.system_prompt = SystemMessage(content = system_prompt)
+
+    def invoke(self, question: str) -> List[str]:
+        """
+        Args:
+            question (str): The question to be split.
+
+        Returns:
+            List of str: The standalone questions, or just the original question if the output cannot be used.
+        """
+        response = self.llm.invoke([self.system_prompt, HumanMessage(content = question)])
+        # Models like to number or bullet the lines despite being told not to
+        lines = [re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip() for line in response.content.splitlines()]
+        sub_questions = [line for line in lines if line][:self.max_questions]
+        if not sub_questions:
+            logger.warning(f"Failed to split the question. Raw output: {response.content}")
+            return [question]
+        return sub_questions
+
 if __name__ == "__main__":
-    
+
     model = BooleanReasoning()
     questions = ["Respond 'no'.", "Respond 'yes'.", "Is the sky blue?", "Is fire cold?"]
     expected_answers = ["no", "yes", "yes", "no"]

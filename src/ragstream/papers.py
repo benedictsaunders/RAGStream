@@ -120,8 +120,9 @@ def get_from_arxiv(queries: List[str] | str, max_results = 6, date_from: None = 
 def extract_article_text(pdf_path: str | Path) -> List[Document] | str:
     """
     Extract text from a given PDF. Primarily, this method uses GROBID, but if that fails, the 
-    method falls back to a slightly more improcise approach using PyMuPDF which does a poorer
-    job of stripping whitespace and various other document sections.
+    method falls back to a slightly more improcise approach using PyMuPDF which does a poor
+    job of stripping whitespace and various other document sections, and often includes artifacts
+    like page numbers, headers, and messe up columns from poorly constructed PDFs (LaTeX ftw!).
 
     Args:
         pdf_path (Path or str): The path of the PDF to be extracted.
@@ -138,9 +139,7 @@ def extract_article_text(pdf_path: str | Path) -> List[Document] | str:
         logging.warning("GROBID failed. Falling back to PyMuPDF. Expect drop in extraction quality.")
         try:
             with pymupdf.open(pdf_path) as doc:
-                text = chr(12).join(
-                    [page.get_text(sort = True) for page in doc]
-                )
+                text = [page.get_text(sort = True) for page in doc]
         except Exception as e:
             logging.error(f"Error occurred while reading PDF at {pdf_path}: {e}")
     return text
@@ -152,7 +151,7 @@ def get_latest_research(
         as_langchain_document: bool = True
         ) -> List[Tuple[str, str]] | List[Document]:
     """
-    Queries ArXiv and uses LLM reasoning functionality, finding relevent papers from recent research.
+    Queries ArXiv and uses built-on LLM reasoning functionality, finding relevent papers from recent research.
 
     Args:
         topic (str): The research topic against which relevence is determined
@@ -171,6 +170,7 @@ def get_latest_research(
     summaries = papers_df["summary"].tolist()
     urls = papers_df["pdf_url"].tolist()
     dois = papers_df["doi"].tolist()
+    titles = papers_df["title"].tolist()
     decisions = np.zeros(len(summaries), dtype=np.int8)
     for i, summary in enumerate(summaries):
         # New instance each loop to avoid adding to context and creating model confusion etc.
@@ -183,20 +183,41 @@ def get_latest_research(
             name = doi.replace(":", "_")
             download_pdf(urls[i], name = name)
             pages = extract_article_text(Path(os.getcwd()) / "data" / f"{name}.pdf")
+            if not pages:
+                logging.warning(f"No text extracted for {doi}. Skipping.")
+                continue
             if as_langchain_document:
-                for j, page in enumerate(pages):
+                # GROBID only returns the body, so the abstract comes from the ArXiv summary
+                abstract = " ".join(summary.split())
+                if abstract:
+                    latest.append(Document(
+                        page_content=abstract,
+                        metadata={
+                            "page" : 1,
+                            "source": urls[i],
+                            "DOI": doi,
+                            "title": titles[i],
+                            "section": "abstract"
+                        }
+                    ))
+                for j, page in enumerate(pages, start = 1):
+                    # GROBID leaves empty strings for pages without body text
+                    if not page:
+                        continue
                     document = Document(
                         page_content=page,
                         metadata={
                             "page" : j,
                             "source": urls[i],
-                            "DOI": doi
+                            "DOI": doi,
+                            "title": titles[i],
+                            "section": "body"
                         }
                     )
                     latest.append(document)
             else:
                 latest.append(pages)
-    decisions = np.bool(decisions)
+    decisions = decisions.astype(bool)
     if np.all(~decisions):
         logging.warning("No relevant papers found. Refine your queries or topic.")
         return []

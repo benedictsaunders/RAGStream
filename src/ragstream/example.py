@@ -22,7 +22,7 @@ research_area = get_query_terms("research.json")
 relevant_papers = get_latest_research(
     topic=research_area["topic"],
     queries=research_area["queries"],
-    n_recent=25,
+    n_recent=50,
 )
 
 # 3. RAGify the relevant research
@@ -32,3 +32,5 @@ rp.add_documents(relevant_papers)
 print(f"RAG pipeline created with {len(relevant_papers)} documents and stored in {rp.db_name}")
 
 # 4. Query the specific knowledgebase
+answer = rp.query("What are some structure types which exihibit promising Li-ion conductivity for solid-state Li-ion batteries?")
+print(answer)
