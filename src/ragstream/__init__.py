@@ -1,4 +1,5 @@
-from ragstream.utils import check_services
-
-if not check_services():
-    raise RuntimeError("Required backend services (GROBID and llama.cpp) are not running.")
+def main() -> None:
+    """Entry point for the `ragstream` command."""
+    # Imported here so that `import ragstream` stays light
+    from ragstream.cli import main as cli_main
+    cli_main()

@@ -14,7 +14,7 @@ from langchain_core.documents import Document
 
 from ragstream.model_interaction import BooleanReasoning
 from ragstream.grobid import GrobidExtractionError, extract_body_text as get_grobid_text
-from ragstream.utils import imerge, cd
+from ragstream.utils import imerge, cd, check_services
 
 # logger = logging.getLogger(__name__)
 logging.basicConfig()
@@ -48,16 +48,13 @@ def download_pdf(pdf_url: str, name = "paper", save_dir: Path | str = Path(os.ge
         pdf_url (str): The URL of the PDF. Duh.
         name (str): the name the PDF should be saved as.
 
-    Returns:
-        int: HTTP return code
+    Raises:
+        urllib.error.HTTPError: If the server does not return the PDF.
     """
     if not name.endswith(".pdf"):
         name = name + ".pdf"
     with cd(save_dir):
-        _, status = urlretrieve(pdf_url, name)
-    if status != 200:
-        logging.warning(f"HTTP retuned code {status}")
-    return status
+        urlretrieve(pdf_url, name)
 
 def get_arxiv_doi(pdf_url) -> str | None:
     """
@@ -144,6 +141,34 @@ def extract_article_text(pdf_path: str | Path) -> List[Document] | str:
             logging.error(f"Error occurred while reading PDF at {pdf_path}: {e}")
     return text
 
+def create_documents(pages: List[str], summary: str, url: str, doi: str, title: str) -> List[Document]:
+    """
+    Create the Langchain Documents for a paper, one for the abstract and one for each page with body text. The
+    chunk IDs are built from this metadata, so everything that ingests a paper should create its documents here.
+
+    Args:
+        pages (list of str): The extracted text of each page.
+        summary (str): The ArXiv summary, used as the abstract.
+        url (str): The URL of the PDF.
+        doi (str): The ArXiv DOI.
+        title (str): The title of the paper.
+
+    Returns:
+        List[Document]: The abstract, if there is one, followed by the pages.
+    """
+    metadata = {"source": url, "DOI": doi, "title": title}
+    documents = []
+    # GROBID only returns the body, so the abstract comes from the ArXiv summary
+    abstract = " ".join(summary.split())
+    if abstract:
+        documents.append(Document(page_content=abstract, metadata={**metadata, "page": 1, "section": "abstract"}))
+    for j, page in enumerate(pages, start = 1):
+        # GROBID leaves empty strings for pages without body text
+        if not page:
+            continue
+        documents.append(Document(page_content=page, metadata={**metadata, "page": j, "section": "body"}))
+    return documents
+
 def get_latest_research(
         topic: str,
         queries: str | List[str],
@@ -162,6 +187,8 @@ def get_latest_research(
     Returns:
         List of Tuple[str, str] or List[Document]: The ArXiv DOI and extracted text from each PDF found to be relevent to the research topic.
     """
+    if not check_services():
+        raise RuntimeError("Required backend services (GROBID and llama.cpp) are not running.")
     papers_df = get_from_arxiv(
         queries = queries,
         max_results = n_recent
@@ -187,34 +214,7 @@ def get_latest_research(
                 logging.warning(f"No text extracted for {doi}. Skipping.")
                 continue
             if as_langchain_document:
-                # GROBID only returns the body, so the abstract comes from the ArXiv summary
-                abstract = " ".join(summary.split())
-                if abstract:
-                    latest.append(Document(
-                        page_content=abstract,
-                        metadata={
-                            "page" : 1,
-                            "source": urls[i],
-                            "DOI": doi,
-                            "title": titles[i],
-                            "section": "abstract"
-                        }
-                    ))
-                for j, page in enumerate(pages, start = 1):
-                    # GROBID leaves empty strings for pages without body text
-                    if not page:
-                        continue
-                    document = Document(
-                        page_content=page,
-                        metadata={
-                            "page" : j,
-                            "source": urls[i],
-                            "DOI": doi,
-                            "title": titles[i],
-                            "section": "body"
-                        }
-                    )
-                    latest.append(document)
+                latest.extend(create_documents(pages, summary, url = urls[i], doi = doi, title = titles[i]))
             else:
                 latest.append(pages)
     decisions = decisions.astype(bool)

@@ -66,7 +66,8 @@ def check_services(
         },
         timeout: int = 5) -> bool:
     """
-    Check to see whether a local LLM and the GROBID server are running. It assumes that llama.cpp is being used to host the models.
+    Check to see whether the backend services are running. Only the services named in `ports` are checked, so a
+    command that does not extract PDFs can leave GROBID out.
 
     Args:
         ports (Dict): dictionary of which ports belong to which tool. Default is
@@ -74,32 +75,33 @@ def check_services(
         timeout (int): number of second before HTTP request timesout. Defaults to 5.
 
     Returns:
-        bool: True is both the LLM and GROBID respond, false otherwise.
+        bool: True if every service in `ports` responds, false otherwise.
     """
-    grobid_addr = f"http://localhost:{ports['GROBID']}/api/isalive"
-    llm_addr = f"http://localhost:{ports['LLM']}/health"
-
-    grobid_isalive = False
-    llm_isalive = False
-
-    try:
-        response = urllib.request.urlopen(grobid_addr, timeout=timeout)
-        grobid_isalive = response.getcode() == 200
-        if not grobid_isalive:
-            logging.warning(f"GROBID server responded with {response.getcode()}.")
-    except (urllib.error.URLError, ConnectionResetError, TimeoutError):
-        logging.warning("GROBID server cannot be reached")
-    try:
-        response = urllib.request.urlopen(llm_addr, timeout=timeout)
-        if response.getcode() == 200:
-            data = json.loads(response.read().decode('utf-8'))
-            llm_isalive = data.get("status") == "ok"
-    except (urllib.error.URLError, ConnectionResetError, TimeoutError):
-        logging.warning("LLM (llama.cpp) cannot be reached.")
-    except urllib.error.HTTPError as e:
-        # HTTP 503 confirms the process is alive, but the model is still loading.
-        if e.code == 503:
-            logging.info("LLM is live, but model is likely loading (HTTP 503)")
-            sleep(timeout)
-            return(check_services(ports=ports))
+    grobid_isalive = "GROBID" not in ports
+    llm_isalive = "LLM" not in ports
+    # This feels super hacky but I want the optionality for just asking vs actually downloading.
+    if "GROBID" in ports:
+        grobid_addr = f"http://localhost:{ports['GROBID']}/api/isalive"
+        try:
+            response = urllib.request.urlopen(grobid_addr, timeout=timeout)
+            grobid_isalive = response.getcode() == 200
+            if not grobid_isalive:
+                logging.warning(f"GROBID server responded with {response.getcode()}.")
+        except (urllib.error.URLError, ConnectionResetError, TimeoutError):
+            logging.warning("GROBID server cannot be reached")
+    if "LLM" in ports:
+        llm_addr = f"http://localhost:{ports['LLM']}/health"
+        try:
+            response = urllib.request.urlopen(llm_addr, timeout=timeout)
+            if response.getcode() == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                llm_isalive = data.get("status") == "ok"
+        except urllib.error.HTTPError as e:
+            # HTTP 503 confirms the process is alive, but the model is still loading.
+            if e.code == 503:
+                logging.info("LLM is live, but model is likely loading (HTTP 503)")
+                sleep(timeout)
+                return(check_services(ports=ports, timeout=timeout))
+        except (urllib.error.URLError, ConnectionResetError, TimeoutError):
+            logging.warning("LLM (llama.cpp) cannot be reached.")
     return llm_isalive and grobid_isalive

@@ -89,6 +89,13 @@ class RAGPipline:
         self._vectorstore.add_documents(chunks, ids = doc_ids)
         return len(chunks)
 
+    def count_chunks(self) -> int:
+        """
+        Returns:
+            int: the number of chunks in the database
+        """
+        return len(self._vectorstore.get(include = [])["ids"])
+
     def retrieve(
             self,
             question: str,

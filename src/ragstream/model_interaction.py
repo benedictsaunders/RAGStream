@@ -141,7 +141,9 @@ class QueryDecomposition(LLMClientBase):
         lines = [re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip() for line in response.content.splitlines()]
         sub_questions = [line for line in lines if line][:self.max_questions]
         if not sub_questions:
-            logger.warning(f"Failed to split the question. Raw output: {response.content}")
+            # The model returns nothing for input that is not a question, i.e. "hello". Not worth a warning,
+            # as searching with the original is all that can be done with it anyway.
+            logger.debug(f"Nothing to split the question into. Raw output: {response.content!r}")
             return [question]
         return sub_questions
 
